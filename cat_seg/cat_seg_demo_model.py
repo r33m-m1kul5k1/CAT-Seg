@@ -83,7 +83,7 @@ class CATSegDemo(nn.Module):
         self.sequential = False
 
         self.use_sam = False
-        self.sam = sam_model_registry["vit_h"](checkpoint="sam_vit_h_4b8939.pth").to(self.device)
+        self.sam = sam_model_registry["vit_h"](checkpoint="/media/mafat/backup/omer_task/catseg_demo/CAT_Seg_demo/sam_vit_h_4b8939.pth").to(self.device)
 
         amg_kwargs = {
             "points_per_side": 32,

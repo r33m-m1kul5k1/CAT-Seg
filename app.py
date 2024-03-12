@@ -4,6 +4,8 @@ import argparse
 import glob
 import multiprocessing as mp
 import os
+from collections import defaultdict
+from typing import List
 
 try:
     import detectron2
@@ -17,6 +19,7 @@ except ModuleNotFoundError:
 
 # fmt: off
 import sys
+
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 # fmt: on
 
@@ -37,81 +40,83 @@ from cat_seg import add_cat_seg_config
 from demo.predictor import VisualizationDemo
 import gradio as gr
 import torch
+import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as fc
 
 # constants
 WINDOW_NAME = "CAT-Seg demo"
 
 
-def setup_cfg(args):
+def setup_config(config_file: str, additional_options: List[str] = None):
+    """
+
+    Args:
+        config_file (str): path to config file
+        additional_options (List[str]): Modify config options using the command-line 'KEY VALUE' pairs
+
+    Returns:
+        the config object
+    """
     # load config from file and command-line arguments
+    if additional_options is None:
+        additional_options = []
     cfg = get_cfg()
     add_deeplab_config(cfg)
     add_cat_seg_config(cfg)
-    cfg.merge_from_file(args.config_file)
-    cfg.merge_from_list(args.opts)
+    cfg.merge_from_file(config_file)
+    cfg.merge_from_list(additional_options)
     if torch.cuda.is_available():
         cfg.MODEL.DEVICE = "cuda"
     cfg.freeze()
     return cfg
 
 
-def get_parser():
-    parser = argparse.ArgumentParser(description="Detectron2 demo for builtin configs")
-    parser.add_argument(
-        "--config-file",
-        default="configs/demo.yaml",
-        metavar="FILE",
-        help="path to config file",
-    )
-    parser.add_argument(
-        "--input",
-        nargs="+",
-        help="A list of space separated input images; "
-        "or a single glob pattern such as 'directory/*.jpg'",
-    )
-    parser.add_argument(
-        "--opts",
-        help="Modify config options using the command-line 'KEY VALUE' pairs",
-        default=([]),
-        nargs=argparse.REMAINDER,
-    )
-    return parser
-
 def save_masks(preds, text):
-    preds = preds['sem_seg'].argmax(dim=0).cpu().numpy() # C H W
+    preds = preds['sem_seg'].argmax(dim=0).cpu().numpy()  # C H W
     for i, t in enumerate(text):
         dir = f"mask_{t}.png"
         mask = preds == i
         cv2.imwrite(dir, mask * 255)
 
-def predict(image, text, model_type):
-    use_sam = model_type != "CAT-Seg"
-    
-    predictions, visualized_output = demo.run_on_image(image, text, use_sam)
-    #save_masks(predictions, text.split(','))
-    canvas = fc(visualized_output.fig)
-    canvas.draw()
-    out = np.frombuffer(canvas.tostring_rgb(), dtype='uint8').reshape(canvas.get_width_height()[::-1] + (3,))
 
-    return out[..., ::-1]
+def save_prediction(input_img_path, output_img_path, text):
+    cfg = setup_config('./configs/demo.yaml')
+    demo = VisualizationDemo(cfg)
+    img: np.ndarray = cv2.imread(input_img_path)
+
+    predictions, vis_output = demo.run_on_image(img, text)
+
+    vis_output.save(output_img_path)
+
+
+def catseg_inference(catseg_visualizer: VisualizationDemo, image: np.ndarray, prompts: List[str]) -> dict:
+    """
+    Runs inference on the given image with a list
+    Args:
+        catseg_visualizer (VisualizationDemo): the catseg object
+        image (np.ndarray): a BGR numpy ndarray represents an image
+        prompts (List[str]): a list of prompts
+
+    Returns:
+        dict: a dictionary represents the {class: mask} inferences
+    """
+    text_prompt = ', '.join(prompts)
+    predictions, _ = catseg_visualizer.run_on_image(image, text_prompt)
+    aggregated_mask = predictions['sem_seg'].argmax(dim=0).cpu()
+    class_mask_mapping = defaultdict(lambda: np.zeros_like(aggregated_mask, dtype=np.bool_))
+    for i in range(len(prompts)):
+        class_mask_mapping[prompts[i]][np.where(aggregated_mask == i)] = True
+
+    return class_mask_mapping
+
 
 if __name__ == "__main__":
-    args = get_parser().parse_args()
-    cfg = setup_cfg(args)
-    global demo
-    demo = VisualizationDemo(cfg)
+    image = cv2.imread("/media/mafat/backup/omer_task/catseg_demo/CAT_Seg_demo/input/uav0000323_01173_v_0000006.jpg")
+    prompts = ['car', 'roads', 'cars', 'tree', 'humans', 'pavement', 'building', 'trees']
+    cfg = setup_config('./configs/demo.yaml')
+    visualizer = VisualizationDemo(cfg)
+    class_to_mask_mapping = catseg_inference(visualizer, image, prompts)
+    plt.imshow(class_to_mask_mapping['humans'])
 
-    iface = gr.Interface(
-        fn=predict,
-        inputs=[gr.Image(), gr.Textbox(placeholder='background, cat, person'), gr.Radio(["CAT-Seg", "Segment Anycat"], value="CAT-Seg")],
-        outputs="image",
-        description="""## CAT-Seg Demo
-Welcome to CAT-Seg demo, where you can try out state-of-the-art open-vocabulary semantic segmentation model CAT-Seg! 
-
-We also combine state-of-the-art open-vocabulary semantic segmentation model, CAT-Seg with SAM(Segment Anything) for semantically labelling mask predictions from SAM.
-
-Please note that this is an optimized version of the full model, and as such, its performance may be limited compared to the full model. 
-
-To get started, simply upload an image and a comma-separated list of categories, and let the model work its magic!""")
-    iface.launch()
+    # save_prediction("/media/mafat/backup/omer_task/catseg_demo/CAT_Seg_demo/input/uav0000323_01173_v_0000006.jpg", "uav0000323_01173_v_0000006.jpg",
+    #                 "car, roads, cars, tree, humans, pavement, building, trees")
