@@ -24,7 +24,7 @@ from detectron2.projects.deeplab import add_deeplab_config
 from detectron2.utils.logger import setup_logger
 
 from cat_seg import add_mask_former_config
-from predictor import VisualizationDemo
+from predictor import Visualizer
 
 
 # constants
@@ -105,7 +105,7 @@ if __name__ == "__main__":
 
     cfg = setup_cfg(args)
 
-    demo = VisualizationDemo(cfg)
+    demo = Visualizer(cfg)
 
     if args.input:
         if len(args.input) == 1:

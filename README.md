@@ -34,10 +34,10 @@ For the demo, CAT-Seg (L) and SAM (ViT-H) is used as default. Please download ea
 The demo can be launched with the ```app.py``` file.
 
 ```bash
-python app.py [-- opts [OPTS]]
+python __init__.py [-- opts [OPTS]]
 
 # For CPU usage
-python app.py --opts MODEL.DEVICE "cpu" [OPTS]
+python __init__.py --opts MODEL.DEVICE "cpu" [OPTS]
 ```
 
 

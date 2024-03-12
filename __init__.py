@@ -35,9 +35,9 @@ from detectron2.config import get_cfg
 from detectron2.data.detection_utils import read_image
 from detectron2.projects.deeplab import add_deeplab_config
 from detectron2.utils.logger import setup_logger
-
+sys.path.append(os.path.dirname(__file__))
 from cat_seg import add_cat_seg_config
-from demo.predictor import VisualizationDemo
+from demo.predictor import Visualizer, VisualizerWrapper
 import gradio as gr
 import torch
 import matplotlib.pyplot as plt
@@ -81,7 +81,7 @@ def save_masks(preds, text):
 
 def save_prediction(input_img_path, output_img_path, text):
     cfg = setup_config('./configs/demo.yaml')
-    demo = VisualizationDemo(cfg)
+    demo = VisualizerWrapper(cfg)
     img: np.ndarray = cv2.imread(input_img_path)
 
     predictions, vis_output = demo.run_on_image(img, text)
@@ -89,14 +89,14 @@ def save_prediction(input_img_path, output_img_path, text):
     vis_output.save(output_img_path)
 
 
-def catseg_inference(catseg_visualizer: VisualizationDemo, image: np.ndarray, prompts: List[str]) -> dict:
+def catseg_inference(catseg_visualizer: VisualizerWrapper, image: np.ndarray, prompts: List[str], reference_classes: List[str] = None) -> dict:
     """
     Runs inference on the given image with a list
     Args:
-        catseg_visualizer (VisualizationDemo): the catseg object
+        catseg_visualizer (VisualizerWrapper): the catseg object
         image (np.ndarray): a BGR numpy ndarray represents an image
         prompts (List[str]): a list of prompts
-
+        reference_classes (List[str]): a list of classes to map the mask to
     Returns:
         dict: a dictionary represents the {class: mask} inferences
     """
@@ -105,7 +105,8 @@ def catseg_inference(catseg_visualizer: VisualizationDemo, image: np.ndarray, pr
     aggregated_mask = predictions['sem_seg'].argmax(dim=0).cpu()
     class_mask_mapping = defaultdict(lambda: np.zeros_like(aggregated_mask, dtype=np.bool_))
     for i in range(len(prompts)):
-        class_mask_mapping[prompts[i]][np.where(aggregated_mask == i)] = True
+        class_or_id_key = prompts[i] if reference_classes is None else reference_classes.index(prompts[i])
+        class_mask_mapping[class_or_id_key][np.where(aggregated_mask == i)] = True
 
     return class_mask_mapping
 
@@ -114,7 +115,7 @@ if __name__ == "__main__":
     image = cv2.imread("/media/mafat/backup/omer_task/catseg_demo/CAT_Seg_demo/input/uav0000323_01173_v_0000006.jpg")
     prompts = ['car', 'roads', 'cars', 'tree', 'humans', 'pavement', 'building', 'trees']
     cfg = setup_config('./configs/demo.yaml')
-    visualizer = VisualizationDemo(cfg)
+    visualizer = VisualizerWrapper(cfg)
     class_to_mask_mapping = catseg_inference(visualizer, image, prompts)
     plt.imshow(class_to_mask_mapping['humans'])
 
